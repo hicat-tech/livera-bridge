@@ -20,7 +20,7 @@
 #ifdef WEBSOCKET_TO_SERIAL
 #include "libserial.h"
 
-static int serial_fd;
+static int serial_fd = -1;
 #endif
 
 static volatile int force_exit = 0;
@@ -49,53 +49,16 @@ callback_echo(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 	switch (reason) {
 	case LWS_CALLBACK_SERVER_WRITEABLE:
-do_tx:
-
-		n = LWS_WRITE_CONTINUATION;
-		if (!pss->continuation) {
-			if (pss->binary)
-				n = LWS_WRITE_BINARY;
-			else
-				n = LWS_WRITE_TEXT;
-			pss->continuation = 1;
-		}
-		if (!pss->final)
-			n |= LWS_WRITE_NO_FIN;
-		lwsl_info("+++ test-echo: writing %d, with final %d\n",
-			  pss->len, pss->final);
-
-		pss->tx += pss->len;
-		n = lws_write(wsi, &pss->buf[LWS_PRE], pss->len, n);
-		if (n < 0) {
-			lwsl_err("ERROR %d writing to socket, hanging up\n", n);
-			return 1;
-		}
-		if (n < (int)pss->len) {
-			lwsl_err("Partial write\n");
-			return -1;
-		}
-		pss->len = -1;
-		if (pss->final)
-			pss->continuation = 0;
-		lws_rx_flow_control(wsi, 1);
 		break;
-
 	case LWS_CALLBACK_RECEIVE:
-do_rx:
-		pss->final = lws_is_final_fragment(wsi);
-		pss->binary = lws_frame_is_binary(wsi);
-		lwsl_info("+++ test-echo: RX len %d final %d, pss->len=%d\n",
-			  len, pss->final, (int)pss->len);
-
-		memcpy(&pss->buf[LWS_PRE], in, len);
-		// assert((int)pss->len == -1);
-		pss->len = (unsigned int)len;
-		pss->rx += len;
-
-		lws_rx_flow_control(wsi, 0);
-		lws_callback_on_writable(wsi);
+		lwsl_info("rx:[%s]", (char *)in);
 
 #ifdef WEBSOCKET_TO_SERIAL
+		if (serial_fd == -1) {
+			serial_fd = UART_Open("/dev/ttyAMA1");
+			UART_Init(serial_fd, 115200);
+		}
+
 		UART_Send(serial_fd, in, len);
 #endif
 
@@ -167,7 +130,7 @@ int main(int argc, char **argv)
 	char passphrase[256];
 	char uri[256] = "/";
 
-	int debug_level = 7;
+	int debug_level = 15;
 #ifndef LWS_NO_DAEMONIZE
 	int daemonize = 0;
 #endif
@@ -269,11 +232,6 @@ int main(int argc, char **argv)
 		lwsl_err("libwebsocket init failed\n");
 		return -1;
 	}
-
-#ifdef WEBSOCKET_TO_SERIAL
-	serial_fd = UART_Open("/dev/ttyAMA1");
-	UART_Init(serial_fd, 115200);
-#endif
 
 	signal(SIGINT, sighandler);
 
