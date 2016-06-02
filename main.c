@@ -20,7 +20,7 @@
 #ifdef WEBSOCKET_TO_SERIAL
 #include "libserial.h"
 
-static int serial_fd = -1;
+static volatile int serial_fd = -1;
 #endif
 
 static volatile int force_exit = 0;
@@ -54,8 +54,13 @@ callback_echo(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		lwsl_info("rx:[%s]", (char *)in);
 
 #ifdef WEBSOCKET_TO_SERIAL
-		if (serial_fd == -1) {
+		if (serial_fd < 0) {
 			serial_fd = UART_Open("/dev/ttyAMA1");
+			if (serial_fd < 0) {
+				printf("Failed to open /dev/ttyAMA1\n");
+			} else {
+				printf("/dev/ttyAMA1 is opened");
+			}
 			UART_Init(serial_fd, 115200);
 		}
 
@@ -204,6 +209,18 @@ int main(int argc, char **argv)
 	if (!client && daemonize && lws_daemonize("/tmp/.lwstecho-lock")) {
 		fprintf(stderr, "Failed to daemonize\n");
 		return 1;
+	}
+#endif
+
+#ifdef WEBSOCKET_TO_SERIAL
+	if (serial_fd < 0) {
+		serial_fd = UART_Open("/dev/ttyAMA1");
+		if (serial_fd < 0) {
+			printf("Failed to open /dev/ttyAMA1\n");
+		} else {
+			printf("/dev/ttyAMA1 is opened");
+		}
+		UART_Init(serial_fd, 115200);
 	}
 #endif
 
